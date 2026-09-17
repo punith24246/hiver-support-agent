@@ -48,7 +48,7 @@ def judge_reply(llm, customer_message: str, reply: str, evidence_block: str) -> 
         f"Candidate reply:\n{reply}\n\n"
         "Score it."
     )
-    out = llm.complete_json(JUDGE_SYSTEM, user, max_tokens=300)
+    out = llm.complete_json(JUDGE_SYSTEM, user, max_tokens=100)
 
     def _clamp(k, default=3):
         try:
