@@ -120,7 +120,8 @@ def main():
             with ThreadPoolExecutor(max_workers=cfg.get("workers", 1)) as ex:
                 return list(ex.map(one, range(len(preds))))
 
-        for name, preds in systems.items():
+        for name in ("agents",):
+            preds = systems[name]
             scores = _judge_batch(name, preds)
             for p, s in zip(preds, scores):
                 p["judge"] = s
