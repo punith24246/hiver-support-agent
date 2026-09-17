@@ -67,7 +67,7 @@ _RATE_LOCK = threading.Lock()
 _LAST_CALL_TS = [0.0]
 
 _TPM_LIMIT = float(os.environ.get("AGENT_TPM_LIMIT", "8000"))
-_EST_TOKENS_PER_CALL = float(os.environ.get("AGENT_EST_TOKENS_PER_CALL", "1150"))
+_EST_TOKENS_PER_CALL = float(os.environ.get("AGENT_EST_TOKENS_PER_CALL", "600"))
 # seconds to leave between calls so (60 / interval) * est_tokens <= TPM_LIMIT
 _MIN_INTERVAL = (60.0 * _EST_TOKENS_PER_CALL / _TPM_LIMIT) if _TPM_LIMIT > 0 else 0.0
 
