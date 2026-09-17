@@ -2,7 +2,7 @@ brand: Ask_Spectrum
 
 # Set mock: true to run the whole pipeline with no API key (smoke test only).
 mock: false
-workers: 2
+workers: 8
 
 models:
   generator: openai/gpt-oss-20b     # drafts + classifies
