@@ -1,0 +1,25 @@
+brand: Ask_Spectrum
+
+# Set mock: true to run the whole pipeline with no API key (smoke test only).
+mock: false
+workers: 8
+
+models:
+  generator: openai/gpt-oss-20b     # drafts + classifies
+  judge: openai/gpt-oss-120b        # scores replies, and pre-labels the golden pool
+
+data:
+  csv_path: data/twcs.csv
+  holdout_frac: 0.25                # newest 25% by time is the eval pool
+
+retrieval:
+  k: 4
+  min_score: 0.12
+
+routing:
+  conf_threshold: 0.65              # below this -> human
+  grounding_threshold: 0.18         # no similar precedent -> human
+
+eval:
+  golden_path: data/golden/golden.jsonl
+  human_scores_path: data/golden/human_scores.jsonl
