@@ -85,7 +85,7 @@ def main():
     )
 
     print(f"[3/6] running agent on {len(test_df)} held-out examples ...")
-    with ThreadPoolExecutor(max_workers=cfg.get("workers", 8)) as ex:
+    with ThreadPoolExecutor(max_workers=cfg.get("workers", 1)) as ex:
         agent_out = list(ex.map(agent, test_df.text.tolist()))
 
     systems = {
