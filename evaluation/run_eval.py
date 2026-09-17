@@ -117,7 +117,7 @@ def main():
         def _judge_batch(name, preds):
             def one(i):
                 return judge_reply(jud, test_df.text.iloc[i], preds[i]["reply"], ev_blocks[i])
-            with ThreadPoolExecutor(max_workers=cfg.get("workers", 8)) as ex:
+            with ThreadPoolExecutor(max_workers=cfg.get("workers", 1)) as ex:
                 return list(ex.map(one, range(len(preds))))
 
         for name, preds in systems.items():
