@@ -6,6 +6,14 @@ Three things matter here and nothing else:
   * Defensive JSON parsing. Small open models emit fenced JSON, trailing prose,
     and occasionally a leading "Here is the JSON:". We strip all of it.
   * An offline mock so `pytest` and the smoke test run with no API key.
+
+Rate limiting: Groq's on-demand tier caps tokens-per-minute (TPM). That limit
+applies to the whole account, not per-thread, so a plain per-call retry loop
+doesn't help when several ThreadPoolExecutor workers all retry at once and
+re-collide on the same shrinking budget. RATE_LIMIT_TPM below paces every
+call - across all threads - to stay under budget proactively, and the retry
+loop also parses the "try again in Xs" the API gives you on a 429 instead of
+guessing a backoff.
 """
 
 from __future__ import annotations
@@ -50,6 +58,46 @@ def cache_put(k: str, v: str):
         _CONN.commit()
 
 
+# --- global cross-thread pacing -------------------------------------------
+# Groq's TPM limit is per-account, not per-thread. A token bucket shared by
+# every LLM instance / thread keeps us under budget instead of just reacting
+# to 429s after the fact. Tune via env vars if your tier/model differs.
+
+_RATE_LOCK = threading.Lock()
+_LAST_CALL_TS = [0.0]
+
+_TPM_LIMIT = float(os.environ.get("AGENT_TPM_LIMIT", "8000"))
+_EST_TOKENS_PER_CALL = float(os.environ.get("AGENT_EST_TOKENS_PER_CALL", "1150"))
+# seconds to leave between calls so (60 / interval) * est_tokens <= TPM_LIMIT
+_MIN_INTERVAL = (60.0 * _EST_TOKENS_PER_CALL / _TPM_LIMIT) if _TPM_LIMIT > 0 else 0.0
+
+
+def _pace():
+    """Block until it's safe to make another call, shared across all threads."""
+    if _MIN_INTERVAL <= 0:
+        return
+    with _RATE_LOCK:
+        now = time.monotonic()
+        wait = _LAST_CALL_TS[0] + _MIN_INTERVAL - now
+        if wait > 0:
+            time.sleep(wait)
+        _LAST_CALL_TS[0] = time.monotonic()
+
+
+_RETRY_AFTER_RE = re.compile(r"try again in ([\d.]+)s", re.I)
+
+
+def _retry_after_seconds(err: Exception) -> float | None:
+    """Pull the server-suggested wait time out of a 429 error message, if present."""
+    m = _RETRY_AFTER_RE.search(str(err))
+    return float(m.group(1)) if m else None
+
+
+def _is_rate_limit(err: Exception) -> bool:
+    s = str(err)
+    return "429" in s or "rate_limit" in s.lower()
+
+
 # ---------------------------------------------------------------------------
 
 class LLM:
@@ -79,7 +127,9 @@ class LLM:
             return hit
 
         last_err = None
-        for attempt in range(4):
+        max_attempts = 8  # rate limits need more room than transient 5xx do
+        for attempt in range(max_attempts):
+            _pace()  # proactive: stay under TPM budget before we even try
             try:
                 resp = self.client.chat.completions.create(
                     model=self.model,
@@ -95,7 +145,15 @@ class LLM:
                 return out
             except Exception as e:  # rate limits, transient 5xx
                 last_err = e
-                time.sleep(2 ** attempt)
+                if _is_rate_limit(e):
+                    # reactive: honour the server's own "try again in Xs" if given,
+                    # otherwise fall back to a longer backoff than non-rate-limit errors
+                    wait = _retry_after_seconds(e)
+                    if wait is None:
+                        wait = min(60.0, 2 ** attempt)
+                    time.sleep(wait + 0.5)  # small buffer past the boundary
+                else:
+                    time.sleep(min(30.0, 2 ** attempt))
         raise RuntimeError(f"LLM call failed after retries: {last_err}")
 
     def complete_json(self, system: str, user: str, max_tokens: int = 700) -> dict[str, Any]:
